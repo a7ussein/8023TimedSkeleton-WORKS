@@ -24,6 +24,7 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
+import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 /**
@@ -33,12 +34,15 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
  * project.
  */
 public class Robot extends TimedRobot {
-  /**
-   * This function is run when the robot is first started up and should be used for any
-   * initialization code.
+    /*
+   * Autonomous selection options.
    */
+  private static final String kNothingAuto = "do nothing";
+  private static final String kDriveForwardAndBalance = "DriveFowardAndBalance";
+  private static final String kDepositAndDriveForward = "DepositCupeAndDriveForward";
+  private String m_autoSelected;
+  private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
-  // variable to store the start time
 
    // Driving MOTORS
   private CANSparkMax leftFrontMotor = new CANSparkMax(3, CANSparkMaxLowLevel.MotorType.kBrushless);
@@ -159,14 +163,19 @@ public RelativeEncoder getRightEncoder(){
 // robotInit() runs once when the robot powers on.
   @Override
   public void robotInit() {
+
+    m_chooser.setDefaultOption("Do Nothing Auto", kNothingAuto);
+    m_chooser.setDefaultOption("Drive Forward And Balance", kDriveForwardAndBalance );
+    m_chooser.addOption("Deposit and drive forward", kDepositAndDriveForward);
+    SmartDashboard.putData("Auto choices", m_chooser);
+
   // inverted settings
     rightControllerGroup.setInverted(true);
     leftControllerGroup.setInverted(false);
     rollerMotor.setInverted(false);
     raisingMotor.setInverted(false);
 
-    //init Encoders
-    // raisingMotor.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder, 0, 10);
+  
 
     // slave setup
     rightBackMotor.follow(rightFrontMotor);
@@ -176,12 +185,6 @@ public RelativeEncoder getRightEncoder(){
     // reset encoders to zero
     resetEncoders();
 
-    // set encoder boundreis for intake raising Motor if we have an encoder for it, Don't forget to initalize the encoder
-    // using raisingMotor.configSelectedFeedbackSensor(FeedbackDevice.QuadEncoder(orWhatever Encoder we have), 0, 10); then uncomment the below code.
-    // raisingMotor.configReverseSoftLimitThreshold((int)(0/ kRaisingTick2Feet), 10);
-    // raisingMotor.configForwardSoftLimitThreshold((int) (175 / kRaisingTick2Feet), 10);
-    // raisingMotor.configReverseSoftLimitEnable(true, 10);
-    // raisingMotor.configForwardSoftLimitEnable(true, 10);
 
     // deadBand
     drive.setDeadband(0.05);
@@ -211,27 +214,68 @@ public RelativeEncoder getRightEncoder(){
     resetEncoders();
     enableDrivingMotors(true);
     enableIntakeMotors(true);
-    errorSum = 0;
-    lastError = 0;
-    lastTimeStamp = Timer.getFPGATimestamp();
+    m_autoSelected = m_chooser.getSelected();
+    System.out.println("Auto selected: " + m_autoSelected);
+    //related to PID
+    // errorSum = 0;
+    // lastError = 0;
+    // lastTimeStamp = Timer.getFPGATimestamp();
   }
 
+  // PID Code related
+  // final double kP = 0.5; // needs to be calculated, MAKE SURE YOU DON'T HAVE THE ROBOT ON THE GROUND UNTIL YOU FIGURE IT OUT!
+  // final double kI = 0.5; // needs to be calculated, MAKE SURE YOU DON'T HAVE THE ROBOT ON THE GROUND UNTIL YOU FIGURE IT OUT!
+  // final double kD = 0.1; // needs to be calculated, MAKE SURE YOU DON'T HAVE THE ROBOT ON THE GROUND UNTIL YOU FIGURE IT OUT!
+  // final double iLimit =  1;
 
-  final double kP = 0.5; // needs to be calculated, MAKE SURE YOU DON'T HAVE THE ROBOT ON THE GROUND UNTIL YOU FIGURE IT OUT!
-  final double kI = 0.5; // needs to be calculated, MAKE SURE YOU DON'T HAVE THE ROBOT ON THE GROUND UNTIL YOU FIGURE IT OUT!
-  final double kD = 0.1; // needs to be calculated, MAKE SURE YOU DON'T HAVE THE ROBOT ON THE GROUND UNTIL YOU FIGURE IT OUT!
-  final double iLimit =  1;
-
-  double setPoint = 0;
-  double errorSum = 0;
-  double lastTimeStamp = 0;
-  double lastError = 0;
+  // double setPoint = 0;
+  // double errorSum = 0;
+  // double lastTimeStamp = 0;
+  // double lastError = 0;
 
   @Override
   public void autonomousPeriodic() {
    double leftPosition = leftEncoder.getPosition() * kDriveTick2Feet;
    double rightPosition = rightEncoder.getPosition() * kDriveTick2Feet;
    double distance = (leftPosition + rightPosition) /2;
+   switch (m_autoSelected) {
+    case kNothingAuto:
+    drive.tankDrive(0, 0);
+      break;
+    case kDriveForwardAndBalance:
+      if(distance < 10){
+        drive.tankDrive(0.6, 0.6);
+      }else{
+        drive.tankDrive(0, 0);
+      }
+      //AUTO TO BALANCE ON CHARGING STATION:
+      double angle = m_IMU.getYComplementaryAngle();
+      if(angle > 2){
+        drive.tankDrive(-0.5, -0.5);
+      }
+      if(angle < -2){
+        drive.tankDrive(0.5, 0.5);
+      }
+      break;
+    case kDepositAndDriveForward:
+      rollerMotor.set(0.5);
+      if(m_IMU.getAngle() < 1){
+        drive.tankDrive(-0.6, 0.6);
+      }else{
+        drive.tankDrive(0, 0);
+      }
+      if(distance < 10){
+        drive.tankDrive(0.6, 0.6);
+      }else{
+        drive.tankDrive(0, 0);
+      }
+    default:
+      drive.tankDrive(0, 0);
+      break;
+  }
+
+
+
   // Bang-bang Controlled Auto
   // Benifits: drives the robot a certain distance no matter what
   // issue: doesn't slow down the robot before it stops which makes the robot drive more than what we need
@@ -248,33 +292,32 @@ public RelativeEncoder getRightEncoder(){
   // Equation is Motor Output = kP * error
   // kP is a fixed number that is different from one robot to another
   // error is the distance between the setPoint and where the robot is located
-  if(driveController.getBButton()){
-    setPoint = 10;
-  }else if (driveController.getXButton()){
-    setPoint = 0;
-  }
+  // if(driveController.getBButton()){
+  //   setPoint = 10;
+  // }else if (driveController.getXButton()){
+  //   setPoint = 0;
+  // }
    // get sensor position and convert it into feet
-   double sensorPosition = leftEncoder.getPosition() * kDriveTick2Feet;
 
-   // calculations 
-   double error = setPoint - sensorPosition;
-   double dt = Timer.getFPGATimestamp() - lastTimeStamp;
+   // calculations related to PID
+  //  double error = setPoint - sensorPosition;
+  //  double dt = Timer.getFPGATimestamp() - lastTimeStamp;
    
-   if(Math.abs(error) < iLimit){
-     errorSum += errorSum * dt;
-   }
+  //  if(Math.abs(error) < iLimit){
+  //    errorSum += errorSum * dt;
+  //  }
 
-   double errorRate = (error - lastError) /dt;
-   double outputSpeed = kP * error + kI * errorSum + kD * errorRate;
+  //  double errorRate = (error - lastError) /dt;
+  //  double outputSpeed = kP * error + kI * errorSum + kD * errorRate;
    // double outputSpeed = kP * error + KI * errorSum;
 
    // output to motors 
-   leftControllerGroup.set(outputSpeed);
-   rightControllerGroup.set(-outputSpeed);
+  //  leftControllerGroup.set(outputSpeed);
+  //  rightControllerGroup.set(-outputSpeed);
 
    // update last - variables 
-   lastTimeStamp = Timer.getFPGATimestamp();
-   lastError = error;
+  //  lastTimeStamp = Timer.getFPGATimestamp();
+  //  lastError = error;
   }
 
 
